@@ -1,0 +1,9 @@
+{
+  "id": "wujie-translate",
+  "name": "Wujie Translate",
+  "version": "0.1.0-alpha.1",
+  "minAppVersion": "1.12.7",
+  "description": "Translate selected text and look up English words with hosted bilingual dictionaries.",
+  "author": "lihy",
+  "isDesktopOnly": false
+}
