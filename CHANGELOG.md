@@ -1,11 +1,11 @@
 # 0.1.0
 
-CHG-20261114-TRANSLATE-STABLE。首个正式版，基于最新本地测试候选 0.1.0-alpha.2。
+CHG-20261114-TRANSLATE-STABLE。首个正式版，支持划词翻译和英汉查词。
 
 # 0.1.0-alpha.2
 
-CHG-20261114-TRANSLATE-SETTINGS。移除手填授权码和词库维护说明，默认开启翻译。关掉开关时隐藏入口并取消活动请求。复用当前库的国内无界同步登录，兼容未配置同步但已保存旧版无界译授权的库。
+CHG-20261114-TRANSLATE-SETTINGS。默认开启翻译。关掉开关时隐藏入口并取消活动请求。
 
 # 0.1.0-alpha.1
 
-CHG-20261114-STANDALONE-TRANSLATION。按用户要求拆出独立的 Obsidian 插件无界译，复用国内服务端划词翻译和双语词典。支持编辑选区、阅读视图及输入查词，单独保存当前库的服务授权。
+CHG-20261114-STANDALONE-TRANSLATION。推出独立的 Obsidian 插件无界译，支持在编辑和阅读视图中划词翻译，也可手动输入查词。
