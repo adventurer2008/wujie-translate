@@ -2,6 +2,7 @@
 import * as ObsidianSdk from 'obsidian';
 import { showTooltip } from '@codemirror/view';
 import { canTranslate, selectionLimit, translate } from './service.js';
+import { vaultAuthorization } from './authorization.js';
 
 const { Modal, Notice, Platform, editorInfoField } = ObsidianSdk;
 const languages = {
@@ -33,7 +34,7 @@ function addTranslationMascot(container) {
 function errorMessage(error) {
 	switch (error?.status) {
 		case 401:
-		case 403: return '授权无效，请在无界译设置中更新授权。';
+		case 403: return '当前无界账号授权已失效，请重新登录无界同步。';
 		case 404: return '当前服务暂未开放翻译。';
 		case 429: return '翻译达到用量上限或服务繁忙，请稍后重试。';
 		default: return '翻译失败，请检查网络或稍后重试。';
@@ -201,10 +202,14 @@ function translationTooltip(open) {
 				} });
 				addTranslationMascot(trigger);
 				trigger.setAttribute('aria-expanded', 'false');
-				let close;
+				let close, destroyed = false;
 				trigger.addEventListener('mousedown', event => event.preventDefault());
-				trigger.addEventListener('click', () => { close = open(text, dom, trigger); });
-				return { dom, destroy() { close?.(); } };
+				trigger.addEventListener('click', async () => {
+					const dismiss = await open(text, dom, trigger);
+					if (destroyed) dismiss?.();
+					else close = dismiss;
+				});
+				return { dom, destroy() { destroyed = true; close?.(); } };
 			},
 		};
 	});
@@ -271,11 +276,15 @@ function registerReadingTranslation(owner, enabled, open) {
 		const candidate = { ...selected, range: range.cloneRange(), doc, anchor };
 		active = candidate;
 		trigger.addEventListener('pointerdown', event => event.preventDefault());
-		trigger.addEventListener('click', () => {
+		trigger.addEventListener('click', async () => {
 			if (active !== candidate || !enabled() || !candidate.preview.isConnected ||
 				candidate.view.file !== candidate.file || candidate.view.getMode() !== 'preview') return clear();
-			if (Platform.isMobile) { clear(); open(candidate.text); }
-			else candidate.close = open(candidate.text, anchor, trigger);
+			if (Platform.isMobile) { clear(); await open(candidate.text); }
+			else {
+				const dismiss = await open(candidate.text, anchor, trigger);
+				if (active !== candidate) dismiss?.();
+				else candidate.close = dismiss;
+			}
 		});
 		doc.body.appendChild(anchor);
 	};
@@ -331,16 +340,25 @@ export function registerNoteTranslation(owner) {
 		}
 	}
 	const workspace = owner.app.workspace;
-	const key = () => owner.authorization();
-	const enabled = () => !owner.stopped;
+	const enabled = () => !owner.stopped && owner.translationEnabled;
 	let closeActive;
+	let generation = 0;
 	const close = () => closeActive?.();
-	const open = (text, anchor, trigger) => {
+	const open = async (text, anchor, trigger) => {
 		if (!enabled() || !canTranslate(text)) return;
-		if (text.length > selectionLimit) return new Notice('请选中不超过 1000 字符的文字。');
-		const secret = key();
-		if (!secret) return new Notice('请先在无界译设置中填写服务授权。');
+		if (text.length > selectionLimit) {
+			new Notice('请选中不超过 1000 字符的文字。');
+			return;
+		}
 		close();
+		const opening = ++generation;
+		const key = await vaultAuthorization(owner.app);
+		if (!enabled() || opening !== generation || (anchor && !anchor.isConnected)) return;
+		const secret = key();
+		if (!secret) {
+			new Notice('请先在当前库登录国内无界同步，再使用无界译。');
+			return;
+		}
 		const current = () => enabled() && key() === secret;
 		const request = (text, target, signal, showLocal) =>
 			translate({ text, target, secret, signal, showLocal, current });
@@ -379,7 +397,7 @@ export function registerNoteTranslation(owner) {
 		return closePanel;
 	};
 	const clearReading = registerReadingTranslation(owner, enabled, open);
-	const closeAll = () => { clearReading(); close(); };
+	const closeAll = () => { generation++; clearReading(); close(); };
 	owner.addCommand({
 		id: 'translate-selection', name: title,
 		editorCheckCallback(checking, editor, info) {
@@ -398,9 +416,21 @@ export function registerNoteTranslation(owner) {
 		}));
 		owner.registerEvent(workspace.on('file-open', closeAll));
 	}
-	if (!Platform.isMobile && editorInfoField) owner.registerEditorExtension?.(translationTooltip(open));
+	const extensions = [];
+	const tooltip = !Platform.isMobile && editorInfoField ? translationTooltip(open) : null;
+	if (tooltip) {
+		if (enabled()) extensions.push(tooltip);
+		owner.registerEditorExtension(extensions);
+	}
 	return {
 		close: closeAll,
+		refresh() {
+			if (!enabled()) closeAll();
+			if (tooltip) {
+				extensions.splice(0, extensions.length, ...(enabled() ? [tooltip] : []));
+				workspace.updateOptions();
+			}
+		},
 		open,
 	};
 }

@@ -2,8 +2,6 @@ import { Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 import { registerNoteTranslation } from './translation.js';
 import { canTranslate, selectionLimit } from './service.js';
 
-const secretId = 'wujie-translate-service-authorization';
-
 class LookupModal extends Modal {
 	constructor(app, openResult) {
 		super(app);
@@ -40,53 +38,44 @@ class TranslateSettings extends PluginSettingTab {
 	}
 	display() {
 		this.containerEl.empty();
-		this.containerEl.createEl('p', { text: '发起查询或翻译时，只将所选或输入的文字发送到无界服务。牛津高阶和朗文词库由服务端维护。' });
-		const storage = this.app.secretStorage;
-		if (!storage) {
-			this.containerEl.createEl('p', { text: '当前 Obsidian 无法使用安全存储，请升级后设置服务授权。' });
-			return;
-		}
-		let input;
-		const auth = new Setting(this.containerEl)
-			.setName('服务授权')
-			.setDesc(storage.getSecret(secretId) ? '当前库已保存授权。' : '填写有效的国内无界服务授权码。');
-		auth.addText(text => {
-			input = text;
-			text.inputEl.type = 'password';
-			text.inputEl.autocomplete = 'off';
-			text.inputEl.setAttribute('aria-label', '服务授权码');
-		});
-		auth.addButton(button => button.setButtonText('保存').onClick(() => {
-			const value = input.getValue().trim();
-			if (!value || /\s/.test(value)) return new Notice('请填写有效的服务授权码。');
-			storage.setSecret(secretId, value);
-			this.plugin.translation.close();
-			this.display();
-			new Notice('已保存无界译授权。');
-		}));
-		auth.addButton(button => button.setButtonText('清除').onClick(() => {
-			storage.setSecret(secretId, '');
-			this.plugin.translation.close();
-			this.display();
-		}));
+		this.containerEl.createEl('p', { text: '发起查询或翻译时，只将所选或输入的文字发送到无界服务。' });
+		new Setting(this.containerEl)
+			.setName('启用翻译功能')
+			.setDesc('选中文字后可查词或翻译。')
+			.addToggle(toggle => toggle.setValue(this.plugin.translationEnabled)
+				.onChange(value => this.plugin.setTranslationEnabled(value)));
 	}
 }
 
 module.exports = class WujieTranslate extends Plugin {
-	authorization() {
-		return this.app.secretStorage?.getSecret(secretId) ?? '';
-	}
-	onload() {
+	translationEnabled = true;
+	saveQueue = Promise.resolve();
+	async onload() {
+		this.translationEnabled = (await this.loadData())?.translationEnabled !== false;
 		this.stopped = false;
 		this.translation = registerNoteTranslation(this);
 		const lookup = () => {
+			if (!this.translationEnabled) return;
 			this.lookup?.close();
 			this.lookup = new LookupModal(this.app, this.translation.open);
 			this.lookup.open();
 		};
-		this.addRibbonIcon('languages', '无界译', lookup);
-		this.addCommand({ id: 'lookup', name: '查词和翻译', callback: lookup });
+		this.ribbon = this.addRibbonIcon('languages', '无界译', lookup);
+		this.ribbon.hidden = !this.translationEnabled;
+		this.addCommand({ id: 'lookup', name: '查词和翻译', checkCallback: checking => {
+			if (!this.translationEnabled) return false;
+			if (!checking) lookup();
+			return true;
+		} });
 		this.addSettingTab(new TranslateSettings(this.app, this));
+	}
+	setTranslationEnabled(value) {
+		this.translationEnabled = value;
+		this.ribbon.hidden = !value;
+		if (!value) this.lookup?.close();
+		this.translation.refresh();
+		this.saveQueue = this.saveQueue.then(() => this.saveData({ translationEnabled: value }))
+			.catch(() => new Notice('无法保存翻译设置，请重试。'));
 	}
 	onunload() {
 		this.stopped = true;
