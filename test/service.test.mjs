@@ -4,34 +4,28 @@ import { canTranslate, translate } from '../src/service.js';
 
 function fixture(overrides = {}) {
 	return {
-		text: 'Access', target: 'zh-Hans', secret: 'fixture-only',
-		signal: new AbortController().signal, current: () => true, showLocal() {},
+		text: 'Access', target: 'zh-Hans', signal: new AbortController().signal,
 		...overrides,
 	};
 }
 const entry = source => ({ source, definitions: [{ meaning: '进入' }] });
 const json = value => new Response(JSON.stringify(value));
 
-test('shows hosted dictionaries before the online response and keeps their order', async () => {
+test('looks up the three hosted dictionaries without a credential and keeps their order', async () => {
 	const oxford = entry('oxford-hk10');
 	const longman = entry('longman-5pp');
-	const online = entry('bing');
-	const calls = [];
-	let displayed;
+	const ecdict = entry('ecdict');
 	const result = await translate(fixture({
-		showLocal(entries) { displayed = entries; },
 		fetcher: async (url, request) => {
-			assert.equal(url, 'https://sync.wujiesync.cc/ss2/account/translate');
+			assert.equal(url, 'https://sync.wujiesync.cc/ss2/translate/alpha');
 			assert.equal(request.redirect, 'error');
-			assert.equal(request.headers.Authorization, 'Bearer fixture-only');
-			calls.push(JSON.parse(request.body));
-			if (calls.length === 1) return json({ dictionaries: [oxford, longman] });
-			assert.deepEqual(displayed, [oxford, longman]);
-			return json({ dictionaries: [oxford, longman, online] });
+			assert.equal(request.credentials, 'omit');
+			assert.deepEqual(request.headers, { 'Content-Type': 'application/json' });
+			assert.deepEqual(JSON.parse(request.body), { text: 'Access', target: 'zh-Hans', dictionary: true });
+			return json({ dictionaries: [ecdict, longman, oxford] });
 		},
 	}));
-	assert.deepEqual(calls.map(call => call.dictionary), ['alpha-local', 'alpha']);
-	assert.deepEqual(result.dictionaries, [oxford, longman, online]);
+	assert.deepEqual(result.dictionaries, [oxford, longman, ecdict]);
 });
 
 test('plain sentence translation sends only the text and target', async () => {
@@ -45,19 +39,19 @@ test('plain sentence translation sends only the text and target', async () => {
 	assert.deepEqual(result, { translation: 'Hello.' });
 });
 
-test('rejects protected markers and stops requests when the authorization changes', async () => {
+test('rejects protected markers and ignores results after cancellation', async () => {
 	assert.equal(canTranslate('wujie-lock:secret'), false);
 	assert.equal(canTranslate('```wujie-encrypted'), false);
-	let current = true;
+	const late = new AbortController();
 	let calls = 0;
 	await assert.rejects(translate(fixture({
-		current: () => current,
+		signal: late.signal,
 		fetcher: async () => {
 			calls++;
-			current = false;
+			late.abort();
 			return json({ dictionaries: [entry('oxford-hk10')] });
 		},
-	})), { status: 401 });
+	})), { name: 'AbortError' });
 	assert.equal(calls, 1);
 	const controller = new AbortController();
 	controller.abort();

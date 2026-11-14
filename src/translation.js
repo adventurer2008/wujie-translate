@@ -2,7 +2,6 @@
 import * as ObsidianSdk from 'obsidian';
 import { showTooltip } from '@codemirror/view';
 import { canTranslate, selectionLimit, translate } from './service.js';
-import { vaultAuthorization } from './authorization.js';
 
 const { Modal, Notice, Platform, editorInfoField } = ObsidianSdk;
 const languages = {
@@ -33,8 +32,6 @@ function addTranslationMascot(container) {
 
 function errorMessage(error) {
 	switch (error?.status) {
-		case 401:
-		case 403: return '当前无界账号授权已失效，请重新登录无界同步。';
 		case 404: return '当前服务暂未开放翻译。';
 		case 429: return '翻译达到用量上限或服务繁忙，请稍后重试。';
 		default: return '翻译失败，请检查网络或稍后重试。';
@@ -133,17 +130,11 @@ function renderTranslation(container, text, request, close) {
 		copy.hidden = true;
 		retry.hidden = true;
 		output.setText(target.value === 'zh-Hans' && dictionaryWord.test(text.trim()) ? '正在查询…' : '正在翻译…');
-		let showedLocal = false;
 		try {
-			const result = await request(text, target.value, controller.signal, entries => {
-				if (controller.signal.aborted || !entries.length) return;
-				showedLocal = true;
-				renderDictionaries(output, entries, text);
-			});
+			const result = await request(text, target.value, controller.signal);
 			if (controller.signal.aborted) return;
 			if (result.dictionaries) {
-				if (result.dictionaries.length || !showedLocal)
-					renderDictionaries(output, result.dictionaries, text);
+				renderDictionaries(output, result.dictionaries, text);
 				return;
 			}
 			if (result.dictionary) {
@@ -156,7 +147,7 @@ function renderTranslation(container, text, request, close) {
 			copy.hidden = false;
 		} catch (error) {
 			if (controller.signal.aborted) return;
-			if (!showedLocal) output.setText(errorMessage(error));
+			output.setText(errorMessage(error));
 			retry.hidden = false;
 		}
 	};
@@ -342,26 +333,16 @@ export function registerNoteTranslation(owner) {
 	const workspace = owner.app.workspace;
 	const enabled = () => !owner.stopped && owner.translationEnabled;
 	let closeActive;
-	let generation = 0;
 	const close = () => closeActive?.();
-	const open = async (text, anchor, trigger) => {
+	const open = (text, anchor, trigger) => {
 		if (!enabled() || !canTranslate(text)) return;
 		if (text.length > selectionLimit) {
 			new Notice('请选中不超过 1000 字符的文字。');
 			return;
 		}
 		close();
-		const opening = ++generation;
-		const key = await vaultAuthorization(owner.app);
-		if (!enabled() || opening !== generation || (anchor && !anchor.isConnected)) return;
-		const secret = key();
-		if (!secret) {
-			new Notice('请先在当前库登录国内无界同步，再使用无界译。');
-			return;
-		}
-		const current = () => enabled() && key() === secret;
-		const request = (text, target, signal, showLocal) =>
-			translate({ text, target, secret, signal, showLocal, current });
+		if (anchor && !anchor.isConnected) return;
+		const request = (text, target, signal) => translate({ text, target, signal });
 		if (!anchor) {
 			const modal = new TranslationModal(owner.app, text, request, () => {
 				if (closeActive === closeModal) closeActive = undefined;
@@ -397,7 +378,7 @@ export function registerNoteTranslation(owner) {
 		return closePanel;
 	};
 	const clearReading = registerReadingTranslation(owner, enabled, open);
-	const closeAll = () => { generation++; clearReading(); close(); };
+	const closeAll = () => { clearReading(); close(); };
 	owner.addCommand({
 		id: 'translate-selection', name: title,
 		editorCheckCallback(checking, editor, info) {
