@@ -1,3 +1,7 @@
+# 0.1.2
+
+CHG-20261126-TRANSLATE-FAILOVER-STABLE. Promote the accepted Alpha with automatic service domain failover for word lookup and sentence translation.
+
 # 0.1.2-alpha.1
 
 CHG-20261126-TRANSLATE-DOMAIN-FAILOVER. Automatically try the other service domains when a lookup or translation encounters a connection failure, timeout or unavailable gateway. Cancellation stops all remaining attempts.
