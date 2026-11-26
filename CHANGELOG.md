@@ -1,3 +1,7 @@
+# 0.1.2-alpha.1
+
+CHG-20261126-TRANSLATE-DOMAIN-FAILOVER. Automatically try the other service domains when a lookup or translation encounters a connection failure, timeout or unavailable gateway. Cancellation stops all remaining attempts.
+
 # 0.1.1
 
 CHG-20261114-GUEST-TRANSLATE-STABLE。独立提供英汉查词和整句翻译，保留切换语言和复制译文。

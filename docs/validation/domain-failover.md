@@ -1,0 +1,9 @@
+# Translation domain failover
+
+CHG-20261126-TRANSLATE-DOMAIN-FAILOVER. Requests use the existing three HTTPS service domains in order. Network failures, per-attempt timeouts covering the response body, and HTTP 408/500/502/503/504 allow the next domain. HTTP business errors, including quotas, stop retries. Each domain is tried once per action. Closing the panel or disabling the plugin cancels pending requests. A subsequent action starts with the primary again.
+
+Windows Node tests cover lookups, sentences, two failed domains, response-body stalls, cancellation, bounded complete outages, business errors and recovery. Windows, macOS, Linux desktop, Android, iPhone/iOS and iPad/iPadOS share the browser Fetch and AbortController implementation. Physical-device network failover, background/lock-screen/resume and touch interactions remain unverified on all six platforms. Existing narrow-screen controls are retained. Reopening after restart uses the primary domain. Mixed-version plugins retain their own routing. Requests have no account credentials and do not write notes, source modification times, encryption keys or sync progress. Restoring the previous plugin version restores its original routing.
+
+All three domains terminate on the same server. This provides alternate domain access, with shared backend availability. Retrying after a lost response can repeat translation work and consume additional service quota.
+
+Live verification on 2026-11-26 passed all three domains independently for dictionary results, sentence translation and four desktop/mobile CORS origins. Injecting a connection failure for the first domain and for both first domains successfully reached the live alternate for both lookup and sentence requests. Requests were paced to respect the existing anonymous rate limit. No actual domain was disabled. Nginx configuration was backed up and validated before reload.
